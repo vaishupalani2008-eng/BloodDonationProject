@@ -13,6 +13,7 @@ Run as a terminal menu instead:
     python app.py --cli
 """
 
+import os
 import sys
 from flask import Flask, request
 from blood_donation_system import *
@@ -87,6 +88,7 @@ def page_shell(body_html):
     <nav>
       <a href="/">Dashboard</a>
       <a href="/register">Register Donor</a>
+      <a href="/need-blood">Need Blood?</a>
     </nav>
   </div>
   <div class="wrap">
@@ -111,6 +113,7 @@ def register():
         hemoglobin = float(request.form.get("hemoglobin", 0))
         gender = request.form.get("gender", "").strip()
         phone = request.form.get("phone", "").strip()
+        location = request.form.get("location", "").strip()
         blood_type = request.form.get("blood_type", "").strip().upper()
         last_donation = request.form.get("last_donation", "").strip() or None
         pregnant_or_bf = request.form.get("pregnant_or_bf") == "on"
@@ -118,7 +121,7 @@ def register():
 
         donor, eligible, reasons = register_donor_data(
             name, age, weight, hemoglobin, gender, phone, blood_type,
-            last_donation, pregnant_or_bf, has_fever
+            last_donation, pregnant_or_bf, has_fever, location
         )
 
         if eligible:
@@ -185,6 +188,9 @@ def register():
             </div>
           </div>
 
+          <label>City / Area</label>
+          <input type="text" name="location" placeholder="e.g. Andheri, Mumbai" required>
+
           <label>Last Donation Date (leave blank if first time)</label>
           <input type="date" name="last_donation">
 
@@ -205,20 +211,68 @@ def register():
     return page_shell(body)
 
 
-# ---------------------------------------------------------
-# HTML Report Generator
-# ---------------------------------------------------------
-def generate_html_report():
-    """Generate and open the dashboard HTML report."""
-    import webbrowser
-    html = build_html()
-    report_file = "report.html"
-    with open(report_file, "w", encoding="utf-8") as f:
-        f.write(html)
-    report_path = os.path.abspath(report_file)
-    print(f"\n✅ {report_file} generated at {report_path}")
-    print("Opening it in your default browser...")
-    webbrowser.open(f"file://{report_path}")
+@app.route("/need-blood", methods=["GET", "POST"])
+def need_blood():
+    blood_type_options = "".join(f"<option value='{bt}'>{bt}</option>" for bt in BLOOD_TYPES)
+    blood_type_options = f"<option value=''>Any</option>{blood_type_options}"
+
+    results_html = ""
+    selected_bt = ""
+    location_query = ""
+
+    if request.method == "POST":
+        selected_bt = request.form.get("blood_type", "").strip().upper()
+        location_query = request.form.get("location", "").strip()
+
+        matches = find_nearby_donors(blood_type=selected_bt, location_query=location_query)
+
+        if matches:
+            rows = "".join(f"""
+              <tr>
+                <td class="label">{d['name']}</td>
+                <td class="value" style="text-align:left;">{d['blood_type']}</td>
+                <td class="value" style="text-align:left;">{d.get('location') or 'N/A'}</td>
+                <td class="value" style="text-align:left;">{d.get('phone', 'N/A')}</td>
+              </tr>""" for d in matches)
+            results_html = f"""
+            <div class="section" style="margin-top:20px;">
+              <div class="section-header"><h2>{len(matches)} Donor(s) Found</h2></div>
+              <div class="section-body">
+                <table>
+                  <thead><tr><th>Name</th><th>Blood Type</th><th>Location</th><th>Phone</th></tr></thead>
+                  <tbody>{rows}</tbody>
+                </table>
+              </div>
+            </div>
+            """
+        else:
+            results_html = """
+            <div class="result-banner no" style="margin-top:20px;">
+              <strong>No matching donors found.</strong> Try a different blood type or a broader location.
+            </div>
+            """
+
+    body = f"""
+    <div class="section">
+      <div class="section-header"><h2>Need Blood?</h2></div>
+      <div class="section-body">
+        <p style="margin-top:0; color:var(--muted); font-size:14px;">
+          Search registered, eligible donors by blood type and nearby area. Contact them directly using the phone number shown.
+        </p>
+        <form method="POST" action="/need-blood">
+          <label>Blood Type Needed</label>
+          <select name="blood_type">{blood_type_options}</select>
+
+          <label>City / Area</label>
+          <input type="text" name="location" placeholder="e.g. Andheri, Mumbai" value="{location_query}">
+
+          <button type="submit">Search Donors</button>
+        </form>
+      </div>
+    </div>
+    {results_html}
+    """
+    return page_shell(body)
 
 
 # ---------------------------------------------------------
@@ -266,15 +320,15 @@ def main_cli():
 # ---------------------------------------------------------
 # Entrypoint
 # ---------------------------------------------------------
+import os
+
 if __name__ == "__main__":
     if "--cli" in sys.argv:
         main_cli()
     else:
-        import socket
-        hostname = socket.gethostname()
-        local_ip = socket.gethostbyname(hostname)
-        print("Starting web app...")
-        print(f"  This Computer:  http://127.0.0.1:5000")
-        print(f"  Other Devices:  http://{local_ip}:5000")
-        print("(Use 'python app.py --cli' for the terminal menu instead.)")
-        app.run(host='0.0.0.0', debug=True)
+        print("Starting Blood Donation Web App...")
+        app.run(
+            host="0.0.0.0",
+            port=int(os.environ.get("PORT", 5000)),
+            debug=False
+        )

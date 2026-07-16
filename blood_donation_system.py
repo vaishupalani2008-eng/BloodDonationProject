@@ -605,3 +605,17 @@ def build_html():
   </div>
 </body>
 </html>"""
+
+
+def generate_html_report():
+    """Generate the official report HTML file and open it in the browser."""
+    html = build_html()
+    with open(REPORT_FILE, "w", encoding="utf-8") as f:
+        f.write(html)
+
+    report_path = os.path.abspath(REPORT_FILE)
+    print(f"\n✅ {REPORT_FILE} generated at {report_path}")
+    try:
+        webbrowser.open(f"file://{report_path}")
+    except Exception:
+        print("Unable to open the report in the browser automatically.")
